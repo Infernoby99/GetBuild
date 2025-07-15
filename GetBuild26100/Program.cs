@@ -15,18 +15,26 @@ class Program
     {
         try
         {
-            listid.Root? build = await apiRequest();
+            //const string FetchUrl = "fetchupd.php?build=26100";
+            //FetchLatest.Root? Latest = await ApiRequestLatest(FetchUrl);
+            
+            const string listUrl = "listid.php?search=26100";
+            listid.Root? build = await ApiRequestList(listUrl);
+            int i = 0;
+
+            var Latest = build.response.builds;
+            
             
             foreach (var data in build.response.builds)
             {
-                string[] sub = data.Value.build.Split('.');
-                if (sub[0] == "26100" && Convert.ToInt32(sub[1]) > 4000 && data.Value.title.Contains("Cumulative"))
+                if (!data.Value.title.Contains("Insider") 
+                    && data.Value.build.StartsWith("26100") 
+                    && data.Value.title.Contains("Windows 11"))
                 {
-                    Console.WriteLine("***********************");
+                    Console.WriteLine($"List Build [{++i}]");
                     Console.WriteLine("Titel: \t\t\t" + data.Value.title);
                     Console.WriteLine("Architekur: \t\t" + data.Value.arch);
-                    Console.WriteLine("Build Nummer: \t\t" + data.Value.build);
-                    var createdDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).DateTime;
+                    var createdDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).Date;
                     Console.WriteLine("Erstellt: \t\t" + createdDate);
                     Console.WriteLine("UUID: \t\t\t" + data.Value.uuid);
                 }
@@ -40,10 +48,14 @@ class Program
         }
     }
 
-    private static Task<listid.Root?> apiRequest()
+    private static Task<listid.Root?> ApiRequestList(string query)
     {
-        const string listUrl = "listid.php?search=26100&&sortByDate=1";
-        return http.GetFromJsonAsync<listid.Root>(listUrl);
+        return http.GetFromJsonAsync<listid.Root>(query);
+    }
+
+    private static Task<FetchLatest.Root?> ApiRequestLatest(string query)
+    {
+        return http.GetFromJsonAsync<FetchLatest.Root>(query);
     }
     
 }
