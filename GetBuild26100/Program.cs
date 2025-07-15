@@ -15,27 +15,22 @@ class Program
     {
         try
         {
-            do
-            {
-                Console.WriteLine("********Interface*******");
-                Console.WriteLine("[1] Obtain Latest Build");
-                listid.Root? build = await apiRequest();
+            listid.Root? build = await apiRequest();
             
-                foreach (var data in build.response.builds)
+            foreach (var data in build.response.builds)
+            {
+                string[] sub = data.Value.build.Split('.');
+                if (sub[0] == "26100" && Convert.ToInt32(sub[1]) > 4000 && data.Value.title.Contains("Cumulative"))
                 {
-                    string[] sub = data.Value.build.Split('.');
-                    if (sub[0] == "26100" && Convert.ToInt32(sub[1]) > 4000 && data.Value.title.Contains("Cumulative"))
-                    {
-                        Console.WriteLine("***********************");
-                        Console.WriteLine("Titel: \t\t\t" + data.Value.title);
-                        Console.WriteLine("Architekur: \t\t" + data.Value.arch);
-                        Console.WriteLine("Build Nummer: \t\t" + data.Value.build);
-                        var createdDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).DateTime;
-                        Console.WriteLine("Erstellt: \t\t" + createdDate);
-                        Console.WriteLine("UUID: \t\t\t" + data.Value.uuid);
-                    }
+                    Console.WriteLine("***********************");
+                    Console.WriteLine("Titel: \t\t\t" + data.Value.title);
+                    Console.WriteLine("Architekur: \t\t" + data.Value.arch);
+                    Console.WriteLine("Build Nummer: \t\t" + data.Value.build);
+                    var createdDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).DateTime;
+                    Console.WriteLine("Erstellt: \t\t" + createdDate);
+                    Console.WriteLine("UUID: \t\t\t" + data.Value.uuid);
                 }
-            } while (true);
+            }
         }
         catch (Exception e)
         {
