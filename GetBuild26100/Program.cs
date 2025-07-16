@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 
 namespace GetBuild26100;
 
@@ -6,7 +7,9 @@ using System.Net.Http.Json;
 
 class Program
 {
-    private static HttpClient http = new()
+    public static LatestBuild _latestBuild = new();
+    
+    private static readonly HttpClient _http = new()
     {
         BaseAddress = new Uri("https://api.uupdump.net/")
     };
@@ -19,26 +22,30 @@ class Program
             //FetchLatest.Root? Latest = await ApiRequestLatest(FetchUrl);
             
             const string listUrl = "listid.php?search=26100";
-            listid.Root? build = await ApiRequestList(listUrl);
-            int i = 0;
+            const string getUrl = "get.php?id=";
+            listid.Root? listBuilds = await ApiRequestList(listUrl);
+            
 
-            var Latest = build.response.builds;
+            string latestUuid = await GetLatestVersionId(listBuilds);
             
             
-            foreach (var data in build.response.builds)
-            {
-                if (!data.Value.title.Contains("Insider") 
-                    && data.Value.build.StartsWith("26100") 
-                    && data.Value.title.Contains("Windows 11"))
-                {
-                    Console.WriteLine($"List Build [{++i}]");
-                    Console.WriteLine("Titel: \t\t\t" + data.Value.title);
-                    Console.WriteLine("Architekur: \t\t" + data.Value.arch);
-                    var createdDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).Date;
-                    Console.WriteLine("Erstellt: \t\t" + createdDate);
-                    Console.WriteLine("UUID: \t\t\t" + data.Value.uuid);
-                }
-            }
+            GetBuild.Root? getBuilds = await ApiRequestGet(getUrl+ latestUuid);
+            string chosenId = await Getfilename(getBuilds);
+            Console.WriteLine("Chosen UUID: " + chosenId);
+
+            GetBuild.Root? getBuildLink = await ApiRequestGet(getUrl + latestUuid, false);
+            await GetLink(getBuildLink, chosenId);
+            
+            Console.WriteLine("\n============== LATEST BUILD INFO ==============");
+            Console.WriteLine($"Windows Version:\t{_latestBuild.WinVers}");
+            Console.WriteLine($"Build Number:\t\t{_latestBuild.BuildNum}");
+            Console.WriteLine($"Architecture:\t\t{_latestBuild.Arch}64");
+            Console.WriteLine($"Release Date:\t\t{_latestBuild.RelDate}");
+            Console.WriteLine($"UUID:\t\t\t{_latestBuild.BuildUuid}");
+            Console.WriteLine($"Filename:\t\t{_latestBuild.Filename}");
+            Console.WriteLine($"SHA1:\t\t\t{_latestBuild.Hash}");
+            Console.WriteLine($"Download URL:\t\t{_latestBuild.Url}");
+            Console.WriteLine("===============================================");
         }
         catch (Exception e)
         {
@@ -50,12 +57,120 @@ class Program
 
     private static Task<listid.Root?> ApiRequestList(string query)
     {
-        return http.GetFromJsonAsync<listid.Root>(query);
+        return _http.GetFromJsonAsync<listid.Root>(query);
     }
 
-    private static Task<FetchLatest.Root?> ApiRequestLatest(string query)
+    private static Task<GetBuild.Root?> ApiRequestGet(string query, bool noLink = false)
     {
-        return http.GetFromJsonAsync<FetchLatest.Root>(query);
+        string reqLink = !noLink ? "&&noLink=1" : "&&nolink=0";
+        return _http.GetFromJsonAsync<GetBuild.Root>(query + reqLink) ;
     }
+
+    private static async Task<string> GetLatestVersionId(listid.Root builds)
+    {
+        string chosenArch;
+        do
+        {
+            Console.Write("Chose your Architecture ( amd | arm ) : ");
+            chosenArch = Console.ReadLine();
+            if(chosenArch == "amd" | chosenArch == "arm") continue;
+            chosenArch = "";
+
+        } while (chosenArch == "");
+        Regex rx = new(@"^26100\.(\d+)$");
+        string? bestUuid = null;
+        int maxPatch = -1;
+        
+        foreach (var data in builds.response.builds)
+        {
+            string build = data.Value.build;
+
+            Match match = rx.Match(build);
+            if (chosenArch != null && match.Success && data.Value.arch.Contains(chosenArch))
+            {
+                int patch = int.Parse(match.Groups[1].Value);
+
+                if (patch > maxPatch)
+                {
+                    maxPatch = patch;
+                    bestUuid = data.Value.uuid;
+                    
+                    Console.WriteLine($"Latest Update Version\t\t| {data.Value.title}");
+
+                    _latestBuild.WinVers = data.Value.title;
+                    _latestBuild.BuildNum = data.Value.build;
+                    _latestBuild.Arch = chosenArch;
+                    string relDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).DateTime.ToString();
+                    _latestBuild.RelDate = relDate;
+                    _latestBuild.BuildUuid = data.Value.uuid;
+                }
+                
+            }
+        }
+        Console.WriteLine($"Neueste Patch-Version\t\t| 26100.{maxPatch}");
+        Console.WriteLine($"BuildUuid from latest version\t| {bestUuid}");
+        return bestUuid;
+    }
+
+    private static async Task<string> Getfilename(GetBuild.Root build)
+    {
+        Regex rx = new(".msu");
+        List<string> filesId = new();
+        string chosenId = String.Empty;
+        int i = 0;
+        Console.WriteLine("***************************************************************************************");
+        foreach (var file in build.response.Files)
+        {
+            Match match = rx.Match(file.Key);
+
+            if (match.Success)
+            {
+                Console.WriteLine($"Index[{i++}] Filename: {file.Key} | {file.Value.uuid}");
+                filesId.Add(file.Value.uuid);
+
+                if (string.IsNullOrEmpty(_latestBuild.Filename))
+                {
+                    _latestBuild.Filename = file.Key;
+                    _latestBuild.FileUuid = file.Value.uuid;
+                }
+            }
+        }
+        Console.WriteLine("***************************************************************************************");
+
+        bool validInput = false;
+        do
+        {
+            Console.Write("Type Index to get File Link: ");
+            string? input = Console.ReadLine();
+
+            if (int.TryParse(input, out int index) && index >= 0 && index < filesId.Count)
+            {
+                chosenId = filesId[index];
+                validInput = true;
+            }
+            else
+            {
+                Console.BackgroundColor = ConsoleColor.Red;
+                Console.WriteLine("Your Typed Index is N/A");
+                Console.BackgroundColor = ConsoleColor.Black;
+            }
+
+        } while (!validInput);
+
+        return chosenId;
+    }
+
+    private static async Task GetLink(GetBuild.Root builds, string uuid)
+    {
+        foreach (var build in builds.response.Files)
+        {
+            if (build.Value.uuid == uuid)
+            {
+                _latestBuild.Url = build.Value.url;
+                _latestBuild.Hash = build.Value.sha1;
+            }
+        }
+    }
+    
     
 }
