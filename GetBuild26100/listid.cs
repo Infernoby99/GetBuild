@@ -16,7 +16,7 @@ public class listid
         public string arch { get; set; }
 
         [JsonPropertyName("created")]
-        public int created { get; set; }
+        public long created { get; set; }
 
         [JsonPropertyName("uuid")]
         public string uuid { get; set; }

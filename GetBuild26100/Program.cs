@@ -1,8 +1,10 @@
-﻿using System.Diagnostics;
+﻿using System.Data;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using Microsoft.VisualBasic;
 
 namespace GetBuild26100;
 
@@ -37,6 +39,7 @@ class Program
                         await GetallBuilds();
                         break;
                     case 3:
+                        await FilterList();
                         break;
                     case 4:
                         Environment.Exit(1);
@@ -58,6 +61,7 @@ class Program
         listid.Root list = await _http.GetFromJsonAsync<listid.Root>("listid.php?search=26100");
         foreach (var build in list.response.builds)
         {
+            
             var created = DateTimeOffset.FromUnixTimeSeconds(build.Value.created).DateTime;
             Console.WriteLine($"[{++i}] | {build.Value.title} | {build.Value.arch} | {created}");
             Console.WriteLine($"UUID ==> {build.Value.uuid}");
@@ -125,8 +129,8 @@ class Program
 
     private static async Task FilterList()
     {
-
-
+        string query = $"listid.php?search=26100";
+        bool scope = false;
         string[] FilterOptions = new string[4];
         do
         {
@@ -134,7 +138,7 @@ class Program
             string? buildFilter = string.Empty;
             string? archFilter = string.Empty;
             string? stringFilter = string.Empty;
-
+            
             Console.WriteLine("********** FILTER OPTIONS **********");
             Console.WriteLine("[1] | builds");
             Console.WriteLine("[2] | arch");
@@ -150,35 +154,93 @@ class Program
                 switch (filterNum)
                 {
                     case 1:
-                        buildFilter = await FitlerOptionBuild();
+                        if (string.IsNullOrEmpty(buildFilter))buildFilter = await FitlerOptionBuild();
                         break;
                     case 2:
-                        archFilter = await FilterOptionArch();
+                        if (string.IsNullOrEmpty(archFilter)) archFilter = await FilterOptionArch();
                         break;
-                    case 3: 
-                        Console.Write("Type in string pattern to search for: ");
-                        stringFilter = Console.ReadLine();
+                    case 3:
+                        if (string.IsNullOrEmpty(stringFilter)) { 
+                            Console.Write("Type in string pattern to search for: ");
+                            stringFilter = Console.ReadLine();
+                        }
                         break;
                     case 4: return;
                 }
             }
 
-            if (string.IsNullOrEmpty(buildFilter))
+            
+            if (!string.IsNullOrEmpty(buildFilter))
             {
                 if (buildFilter.Contains("|"))
                 {
+                    Console.WriteLine("F");
                     string[] range = buildFilter.Split("|");
                     for (int i = 0; i < 2; i++) FilterOptions[i] = range[i];
+                    scope = true;
                 }
-                
-                FilterOptions[0] = buildFilter;
+                else
+                {
+                    FilterOptions[0] = buildFilter;
+                    query += $"&search={FilterOptions[0]}";
+                    scope = false;
+                }
             }
 
+            if (!string.IsNullOrEmpty(archFilter))
+            {
+                FilterOptions[2] = archFilter;
+                query += $"&search={FilterOptions[2]}";
+                
+            }
 
+            if (!string.IsNullOrEmpty(stringFilter))
+            {
+                FilterOptions[3] = stringFilter;
+                query += $"&search={FilterOptions[3]}";
+            }
+            
+            Console.WriteLine("\nCurrent Filter:");
+            if(scope) Console.WriteLine($"Build Filter Scope ==> \t{FilterOptions[0]} to {FilterOptions[1]}");
+            if(!string.IsNullOrEmpty(buildFilter))Console.WriteLine($"Build Filter ==> \t{FilterOptions[0]}");
+            if(!string.IsNullOrEmpty(archFilter)) Console.WriteLine($"Arch Filter ==> \t{FilterOptions[2]}");
+            if(!string.IsNullOrEmpty(stringFilter)) Console.WriteLine($"String Filter ==> \t{FilterOptions[3]}");
+
+
+            Console.Write("Want to add more Filter? press 'y' for yes, else press Enter to Start Filter :");
+            string startFilter = Console.ReadLine();
+
+            if (startFilter == "y" || startFilter == "Y")
+            {
+                int i = 0;
+                try
+                {
+                    listid.Root? FilterdBuilds = await _http.GetFromJsonAsync<listid.Root>(query);
+                    foreach (var build in FilterdBuilds.response.builds)
+                    {
+                        if (scope)
+                        {
+                            int.TryParse(FilterOptions[0], out int scaleHigh);
+                            int.TryParse(FilterOptions[1], out int scaleLow);
+                            string[] version = build.Value.build.Split(".");
+
+                            if (int.TryParse(version[1], out int vers) && vers < scaleHigh && vers > scaleLow)
+                            {
+                                Console.WriteLine($"[{++i}] | {build.Value.title} | {build.Value.arch} | {build.Value.uuid}");
+                            }
+                        }
+                        Console.WriteLine($"[{++i}] | {build.Value.title} | {build.Value.arch} | {build.Value.uuid}");
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                    throw;
+                }
+            }
         } while (true);
-        
     }
-
+    
     private static async Task<string?> FitlerOptionBuild()
     {
         do
@@ -225,7 +287,7 @@ class Program
             Console.WriteLine("One of your Inputs ist either out of Range or wrong input! Try again.");
         } while (true);
         
-    }
+    } 
 
     private static async Task<string?> FilterOptionArch()
     {
@@ -239,6 +301,7 @@ class Program
             Console.WriteLine("Wrong input Try again!");
         } while (true);
     }
+    
     private static Task<listid.Root?> ApiRequestList(string query)
     {
         return _http.GetFromJsonAsync<listid.Root>(query);
@@ -246,7 +309,7 @@ class Program
 
     private static Task<GetBuild.Root?> ApiRequestGet(string query, bool noLink = false)
     {
-        string reqLink = !noLink ? "&&noLink=1" : "&&nolink=0";
+        string reqLink = !noLink ? "&noLink=0" : "&noLink=1";
         return _http.GetFromJsonAsync<GetBuild.Root>(query + reqLink) ;
     }
 
@@ -257,11 +320,10 @@ class Program
         {
             Console.Write("Chose your Architecture ( amd | arm ) : ");
             chosenArch = Console.ReadLine();
-            if(chosenArch == "amd" | chosenArch == "arm") continue;
+            if(chosenArch == "amd" || chosenArch == "arm") continue;
             chosenArch = "";
 
         } while (chosenArch == "");
-        Regex rx = new(@"^26100\.(\d+)$");
         string? bestUuid = null;
         int maxPatch = -1;
         
@@ -269,24 +331,25 @@ class Program
         {
             string build = data.Value.build;
 
-            Match match = rx.Match(build);
-            if (chosenArch != null && match.Success && data.Value.arch.Contains(chosenArch))
+            
+            if (data.Value.build.StartsWith("26100.") && data.Value.arch.Contains(chosenArch))
             {
-                int patch = int.Parse(match.Groups[1].Value);
-
-                if (patch > maxPatch)
+                if (int.TryParse(data.Value.build.Split('.')[1], out int patch))
                 {
-                    maxPatch = patch;
-                    bestUuid = data.Value.uuid;
+                    if (patch > maxPatch)
+                    {
+                        maxPatch = patch;
+                        bestUuid = data.Value.uuid;
                     
-                    Console.WriteLine($"Latest Update Version\t\t| {data.Value.title}");
+                        Console.WriteLine($"Latest Update Version\t\t| {data.Value.title}");
 
-                    _latestBuild.WinVers = data.Value.title;
-                    _latestBuild.BuildNum = data.Value.build;
-                    _latestBuild.Arch = chosenArch;
-                    string relDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).DateTime.ToString();
-                    _latestBuild.RelDate = relDate;
-                    _latestBuild.BuildUuid = data.Value.uuid;
+                        _latestBuild.WinVers = data.Value.title;
+                        _latestBuild.BuildNum = data.Value.build;
+                        _latestBuild.Arch = chosenArch;
+                        string relDate = DateTimeOffset.FromUnixTimeSeconds(data.Value.created).DateTime.ToString();
+                        _latestBuild.RelDate = relDate;
+                        _latestBuild.BuildUuid = data.Value.uuid;
+                    }
                 }
                 
             }
