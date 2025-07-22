@@ -58,16 +58,44 @@ class Program
     private static async Task GetallBuilds()
     {
         int i = 0;
+        List<string> BuildUuid = new();
         listid.Root list = await _http.GetFromJsonAsync<listid.Root>("listid.php?search=26100");
         foreach (var build in list.response.builds)
         {
             
             var created = DateTimeOffset.FromUnixTimeSeconds(build.Value.created).DateTime;
-            Console.WriteLine($"[{++i}] | {build.Value.title} | {build.Value.arch} | {created}");
+            Console.WriteLine($"[{i++}] | {build.Value.title} | {build.Value.arch} | {created}");
             Console.WriteLine($"UUID ==> {build.Value.uuid}");
             Console.WriteLine("_______________________________________________________________________________________");
+            BuildUuid.Add(build.Value.uuid);
         }
+
+        do
+        {
+            Console.Write("Type Index to get all files listed in :");
+            int index = Convert.ToInt32(Console.ReadLine());
+
+            if (index >= 0 && index < BuildUuid.Count)
+            {
+                int x = 0;
+                GetBuild.Root builds = await _http.GetFromJsonAsync<GetBuild.Root>($"get.php?id={BuildUuid[index]}");
+                foreach (var file in builds.response.Files)
+                {
+                    using (var fileStream = new FileStream("example.txt", FileMode.Create))
+                    {
+                        using (var streamWriter = new StreamWriter(fileStream))
+                        {
+                            streamWriter.WriteLine($"Index[{x++}] | {file.Key} | {file.Value.uuid} | {file.Value.url}");
+                            streamWriter.WriteLine("______________________________________________________________________________________________________________________________________________________________");
+                        }
+                    }   
+                }
+                return;
+            }
+            
+        } while (true);
     }
+    
 
     private static async Task<int> MenuOptions()
     {
