@@ -1,29 +1,16 @@
-﻿using System.Data;
-using System.Diagnostics;
-using System.Globalization;
-using System.Net;
-using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
-using Microsoft.VisualBasic;
+﻿using System.Text.RegularExpressions;
 
 namespace GetBuild26100;
-
-using System.Net.Http.Json;
 
 class Program
 {
     private static readonly LatestBuild _latestBuild = new();
-    const string ListUrl = "listid.php?search=26100";
-    const string GetUrl = "get.php?id=";
-    
-    private static readonly HttpClient _http = new()
-    {
-        BaseAddress = new Uri("https://api.uupdump.net/")
-    };
-    
+    private static IUUPServices _uupServices;
 
     static async Task Main(string[] args)
     {
+        var http = new HttpClient { BaseAddress = new Uri("https://api.uupdump.net/") };
+        _uupServices = new UUPServices(http);
         do
         {
             try
@@ -58,15 +45,33 @@ class Program
     private static async Task GetallBuilds()
     {
         int i = 0;
-        listid.Root list = await _http.GetFromJsonAsync<listid.Root>("listid.php?search=26100");
+        List<string> BuildUuid = new();
+        listid.Root? list = await _uupServices.GetListidDataAsync("26100");
         foreach (var build in list.response.builds)
         {
-            
             var created = DateTimeOffset.FromUnixTimeSeconds(build.Value.created).DateTime;
-            Console.WriteLine($"[{++i}] | {build.Value.title} | {build.Value.arch} | {created}");
+            Console.WriteLine($"Key: {build.Key}");
+            Console.WriteLine($"[{i++}] | {build.Value.title} | {build.Value.arch} | {created}");
             Console.WriteLine($"UUID ==> {build.Value.uuid}");
-            Console.WriteLine("_______________________________________________________________________________________");
+            Console.WriteLine("______________________________________________________________________________________");
+            BuildUuid.Add(build.Value.uuid);
         }
+
+        do
+        {
+            Console.Write("Do you want to create aria2c download file from this list, type (\"yes\" | \"no\"): ");
+            string answer = Console.ReadLine();
+
+
+            if (answer.ToLower() == "yes")
+            {
+                Console.Write("Type [index] to get all the files in Download file: ");
+                int index = Convert.ToInt32(Console.ReadLine());
+                await CreateDownloadList(BuildUuid[index]);
+            }
+            else if (answer.ToLower() == "no") return;
+            else Console.WriteLine("Undefined input try again!");
+        } while (true);
     }
 
     private static async Task<int> MenuOptions()
@@ -81,7 +86,6 @@ class Program
         Console.WriteLine("*********************************************\n");
         do
         {
-            
             Console.Write("Chose Options bei typing number [x]: ");
             chosenOpt = Console.ReadLine();
 
@@ -97,19 +101,12 @@ class Program
 
     private static async Task GetLatestBuild()
     {
-        
-        listid.Root? listBuilds = await ApiRequestList(ListUrl);
-            
+        listid.Root? listBuilds = await _uupServices.GetListidDataAsync("26100");
 
         string latestUuid = await GetLatestVersionId(listBuilds);
-            
-        GetBuild.Root? getBuilds = await ApiRequestGet(GetUrl+ latestUuid);
-        string chosenId = await GetFilename(getBuilds);
-            
 
-        GetBuild.Root? getBuildLink = await ApiRequestGet(GetUrl + latestUuid, true);
-        await GetLink(getBuildLink, chosenId);
-            
+        GetBuild.Root? getBuilds = await _uupServices.GetBuildDataAsync(latestUuid);
+
         Console.WriteLine("\n============== LATEST BUILD INFO ==============");
         Console.WriteLine($"Windows Version:\t{_latestBuild.WinVers}");
         Console.WriteLine($"Architecture:\t\t{_latestBuild.Arch}64");
@@ -118,129 +115,155 @@ class Program
         Console.WriteLine($"UUID (Build):\t\t{_latestBuild.BuildUuid}");
         Console.WriteLine($"Release Date:\t\t{_latestBuild.RelDate}");
         Console.WriteLine("\n==============  FILE PROPETIES   ==============");
-        Console.WriteLine($"Filename:\t\t{_latestBuild.Filename}");
-        Console.WriteLine($"UUID (File):\t\t{_latestBuild.FileUuid}");
-        Console.WriteLine($"SHA1:\t\t\t{_latestBuild.Hash}");
-        Console.WriteLine($"Download URL:\t\t{_latestBuild.Url}");
+        Regex rx = new(".msu");
+        foreach (var file in getBuilds.response.Files)
+        {
+            Match match = rx.Match(file.Key);
+            if (match.Success)
+            {
+                Console.WriteLine($"Filename:\t\t{file.Key}");
+                Console.WriteLine($"UUID (File):\t\t{file.Value.uuid}");
+                Console.WriteLine($"SHA1:\t\t\t{file.Value.sha1}");
+                Console.WriteLine($"Download URL:\t\t\n{file.Value.url}\n");
+            }
+        }
         Console.WriteLine("===============================================");
-        Console.WriteLine("\n");
-        Console.ReadLine();
+        do
+        {
+            Console.Write("Do you want to create aria2c download file from Latest Build, type (\"yes\" | \"no\"): ");
+            string answer = Console.ReadLine();
+
+
+            if (answer.ToLower() == "yes")
+            {
+                await CreateDownloadList(_latestBuild.BuildUuid);
+                return;
+            }
+            if (answer.ToLower() == "no") return;
+            Console.WriteLine("Undefined input try again!");
+        } while (true);
     }
 
     private static async Task FilterList()
     {
-        string query = $"listid.php?search=26100";
-        bool scope = false;
-        string[] FilterOptions = new string[4];
+        var list = await _uupServices.GetListidDataAsync("26100");
+
+        if (list?.response?.builds == null)
+        {
+            Console.WriteLine("Keine Builds gefunden!");
+            return;
+        }
+
+        var builds = list.response.builds.Values.ToList();
+
+        string? buildFilter = null;
+        string? archFilter = null;
+        string? nameFilter = null;
+
+        Console.WriteLine("********** FILTER OPTIONS **********");
+        Console.WriteLine("[1] | builds");
+        Console.WriteLine("[2] | arch");
+        Console.WriteLine("[3] | Update name");
+        Console.WriteLine("[4] | exit");
+        Console.WriteLine("************************************");
+
+        Console.Write("Chose Options bei typing number [x]: ");
+        string chosenFilter = Console.ReadLine();
+
+        switch (chosenFilter)
+        {
+            case "1":
+                buildFilter = await FitlerOptionBuild();
+                break;
+            case "2":
+                archFilter = await FilterOptionArch();
+                break;
+            case "3":
+                Console.Write("Type in string pattern to search for: ");
+                nameFilter = Console.ReadLine();
+                break;
+            case "4":
+                return;
+        }
+
+        var filtered = builds.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(buildFilter))
+        {
+            if (buildFilter.Contains("|"))
+            {
+                var parts = buildFilter.Split("|");
+                int high = int.Parse(parts[0]);
+                int low = int.Parse(parts[1]);
+
+                filtered = filtered.Where(b =>
+                {
+                    var patchStr = b.build.Split('.')[1];
+                    if (int.TryParse(patchStr, out int patch))
+                        return patch <= high && patch >= low;
+                    return false;
+                });
+            }
+            else
+            {
+                filtered = filtered.Where(b => b.build.EndsWith(buildFilter));
+            }
+        }
+
+        if (!string.IsNullOrEmpty(archFilter))
+        {
+            filtered = filtered.Where(b => b.arch.Equals(archFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrEmpty(nameFilter))
+        {
+            filtered = filtered.Where(b => b.title.Contains(nameFilter, StringComparison.OrdinalIgnoreCase));
+        }
+        var filteredList = filtered.ToList();
+
+        int i = 0;
+        foreach (var build in filtered)
+        {
+            Console.WriteLine($"[{++i}] | {build.title} | {build.arch} | {build.build} | {build.uuid}");
+        }
+
+        if (i == 0)
+        {
+            Console.WriteLine("Keine Ergebnisse für deine Filter gefunden!");
+            return;
+        }
+        
         do
         {
-            string chosenFilter = string.Empty;
-            string? buildFilter = string.Empty;
-            string? archFilter = string.Empty;
-            string? stringFilter = string.Empty;
-            
-            Console.WriteLine("********** FILTER OPTIONS **********");
-            Console.WriteLine("[1] | builds");
-            Console.WriteLine("[2] | arch");
-            Console.WriteLine("[3] | Update name");
-            Console.WriteLine("[4] | exit");
-            Console.WriteLine("************************************");
-            
-            Console.Write("\nChose your Filter Options ");
-            chosenFilter = Console.ReadLine();
-            
-            if (int.TryParse(chosenFilter, out int filterNum))
-            {
-                switch (filterNum)
-                {
-                    case 1:
-                        if (string.IsNullOrEmpty(buildFilter))buildFilter = await FitlerOptionBuild();
-                        break;
-                    case 2:
-                        if (string.IsNullOrEmpty(archFilter)) archFilter = await FilterOptionArch();
-                        break;
-                    case 3:
-                        if (string.IsNullOrEmpty(stringFilter)) { 
-                            Console.Write("Type in string pattern to search for: ");
-                            stringFilter = Console.ReadLine();
-                        }
-                        break;
-                    case 4: return;
-                }
-            }
+            Console.Write("Do you want to create aria2c download file from this filtered list? (yes/no): ");
+            string answer = Console.ReadLine().ToLower();
 
-            
-            if (!string.IsNullOrEmpty(buildFilter))
+            if (answer == "yes")
             {
-                if (buildFilter.Contains("|"))
+                Console.Write("Type [index] of build to create Download file: ");
+                if (int.TryParse(Console.ReadLine(), out int index) &&
+                    index >= 0 && index < filteredList.Count)
                 {
-                    Console.WriteLine("F");
-                    string[] range = buildFilter.Split("|");
-                    for (int i = 0; i < 2; i++) FilterOptions[i] = range[i];
-                    scope = true;
+                    await CreateDownloadList(filteredList[index].uuid);
+                    Console.WriteLine("Download list created: aria2c.txt");
+                    return;
                 }
-                else
-                {
-                    FilterOptions[0] = buildFilter;
-                    query += $"&search={FilterOptions[0]}";
-                    scope = false;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(archFilter))
-            {
-                FilterOptions[2] = archFilter;
-                query += $"&search={FilterOptions[2]}";
+                Console.WriteLine("Invalid index, try again!");
                 
             }
-
-            if (!string.IsNullOrEmpty(stringFilter))
+            else if (answer == "no")
             {
-                FilterOptions[3] = stringFilter;
-                query += $"&search={FilterOptions[3]}";
+                return;
             }
-            
-            Console.WriteLine("\nCurrent Filter:");
-            if(scope) Console.WriteLine($"Build Filter Scope ==> \t{FilterOptions[0]} to {FilterOptions[1]}");
-            if(!string.IsNullOrEmpty(buildFilter))Console.WriteLine($"Build Filter ==> \t{FilterOptions[0]}");
-            if(!string.IsNullOrEmpty(archFilter)) Console.WriteLine($"Arch Filter ==> \t{FilterOptions[2]}");
-            if(!string.IsNullOrEmpty(stringFilter)) Console.WriteLine($"String Filter ==> \t{FilterOptions[3]}");
-
-
-            Console.Write("Want to add more Filter? press 'y' for yes, else press Enter to Start Filter :");
-            string startFilter = Console.ReadLine();
-
-            if (startFilter == "y" || startFilter == "Y")
+            else
             {
-                int i = 0;
-                try
-                {
-                    listid.Root? FilterdBuilds = await _http.GetFromJsonAsync<listid.Root>(query);
-                    foreach (var build in FilterdBuilds.response.builds)
-                    {
-                        if (scope)
-                        {
-                            int.TryParse(FilterOptions[0], out int scaleHigh);
-                            int.TryParse(FilterOptions[1], out int scaleLow);
-                            string[] version = build.Value.build.Split(".");
-
-                            if (int.TryParse(version[1], out int vers) && vers < scaleHigh && vers > scaleLow)
-                            {
-                                Console.WriteLine($"[{++i}] | {build.Value.title} | {build.Value.arch} | {build.Value.uuid}");
-                            }
-                        }
-                        Console.WriteLine($"[{++i}] | {build.Value.title} | {build.Value.arch} | {build.Value.uuid}");
-                    }
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e);
-                    throw;
-                }
+                Console.WriteLine("Undefined input, try again!");
             }
         } while (true);
+
+        
     }
-    
+
     private static async Task<string?> FitlerOptionBuild()
     {
         do
@@ -251,20 +274,23 @@ class Program
             Console.WriteLine("[2] | Filter Scope of Builds");
             Console.WriteLine("[3] | exit");
             Console.WriteLine("******************************************");
+            Console.Write("Type [x] for which Build Filter: ");
             string? inputBuild = Console.ReadLine();
 
             if (int.TryParse(inputBuild, out int Index))
             {
                 switch (Index)
                 {
-                    case 1: 
-                        Console.WriteLine("\nType in Specific Build version => 26100.");
+                    case 1:
+                        Console.Write("\nType in Specific Build version => 26100.");
                         inputBuild = Console.ReadLine();
                         break;
                     case 2:
                         Console.WriteLine("\nType in Range of Scope to filter through.");
-                        Console.WriteLine($"Highest Version: 26100.{inputBuild =  Console.ReadLine()}");
-                        Console.WriteLine($"Lowest Verstion: 26100.{inputBuild += '|' + Console.ReadLine()}");
+                        Console.Write("Highest Version: 26100.");
+                        inputBuild = Console.ReadLine();
+                        Console.Write("Lowest Verstion: 26100.");
+                        inputBuild += '|' + Console.ReadLine();
                         Scope = true;
                         break;
                     case 3:
@@ -276,18 +302,18 @@ class Program
             {
                 return build.ToString();
             }
-            
+
             string[] ranges = Scope ? inputBuild.Split("|") : null;
             if (Scope && ranges != null
                       && int.TryParse(ranges[0], out int high) && high >= 2
-                      && int.TryParse(ranges[1], out int low)  && low >= 2)
+                      && int.TryParse(ranges[1], out int low) && low >= 2)
             {
                 return high + "|" + low;
             }
+
             Console.WriteLine("One of your Inputs ist either out of Range or wrong input! Try again.");
         } while (true);
-        
-    } 
+    }
 
     private static async Task<string?> FilterOptionArch()
     {
@@ -297,20 +323,9 @@ class Program
             Console.Write("Type in arch ( amd | arm ): ");
             string inputArch = Console.ReadLine();
 
-            if (inputArch == "amd" || inputArch == "arm") return inputArch;
+            if (inputArch == "amd" || inputArch == "arm") return inputArch + "64";
             Console.WriteLine("Wrong input Try again!");
         } while (true);
-    }
-    
-    private static Task<listid.Root?> ApiRequestList(string query)
-    {
-        return _http.GetFromJsonAsync<listid.Root>(query);
-    }
-
-    private static Task<GetBuild.Root?> ApiRequestGet(string query, bool noLink = false)
-    {
-        string reqLink = !noLink ? "&noLink=0" : "&noLink=1";
-        return _http.GetFromJsonAsync<GetBuild.Root>(query + reqLink) ;
     }
 
     private static async Task<string> GetLatestVersionId(listid.Root builds)
@@ -320,18 +335,18 @@ class Program
         {
             Console.Write("Chose your Architecture ( amd | arm ) : ");
             chosenArch = Console.ReadLine();
-            if(chosenArch == "amd" || chosenArch == "arm") continue;
+            if (chosenArch == "amd" || chosenArch == "arm") continue;
             chosenArch = "";
-
         } while (chosenArch == "");
+
         string? bestUuid = null;
         int maxPatch = -1;
-        
+
         foreach (var data in builds.response.builds)
         {
             string build = data.Value.build;
 
-            
+
             if (data.Value.build.StartsWith("26100.") && data.Value.arch.Contains(chosenArch))
             {
                 if (int.TryParse(data.Value.build.Split('.')[1], out int patch))
@@ -340,7 +355,7 @@ class Program
                     {
                         maxPatch = patch;
                         bestUuid = data.Value.uuid;
-                    
+
                         Console.WriteLine($"Latest Update Version\t\t| {data.Value.title}");
 
                         _latestBuild.WinVers = data.Value.title;
@@ -351,87 +366,27 @@ class Program
                         _latestBuild.BuildUuid = data.Value.uuid;
                     }
                 }
-                
             }
         }
+
         Console.WriteLine($"Neueste Patch-Version\t\t| 26100.{maxPatch}");
         Console.WriteLine($"BuildUuid from latest version\t| {bestUuid}");
         return bestUuid;
     }
 
-    private static async Task<string> GetFilename(GetBuild.Root build)
+    private static async Task CreateDownloadList(string uuid)
     {
-        Regex rx = new(".msu");
-        List<string> filesId = new();
-        List<string> filename = new();
-        
-        int i = 0;
-        
-        Console.WriteLine("***************************************************************************************");
-        foreach (var file in build.response.Files)
+        if (uuid != null)
         {
-            Match match = rx.Match(file.Key);
-
-            if (match.Success)
+            await using var filestream = new FileStream("aria2c.txt", FileMode.Create);
+            await using var streamwriter = new StreamWriter(filestream);
+            GetBuild.Root? builds = await _uupServices.GetBuildDataAsync(uuid);
+            foreach (var file in builds.response.Files)
             {
-                Console.WriteLine($"Index[{i++}] | Filename: {file.Key} | {file.Value.uuid}");
-                filesId.Add(file.Value.uuid);
-                filename.Add(file.Key);
-            }
-        }
-        Console.WriteLine("***************************************************************************************");
-        
-        do
-        {
-            string chosenId = String.Empty;
-            Console.Write("\nType Index to get File Link: ");
-            string? input = Console.ReadLine();
-            
-            if (int.TryParse(input, out int index) && index >= 0 && index < filesId.Count)
-            {
-                chosenId = filesId[index];
-                Console.WriteLine("\nChosen File: " + filename[index]);
-                Console.WriteLine("Chosen UUID: " + chosenId);
-                bool check = await CheckChoice(filename[index], chosenId);
-                
-                if (check) return chosenId;
-            }
-            else
-            {
-                Console.WriteLine("\n!!!!! The typed Index is out of Bounds or not and Integer !!!!!\n");
-            }
-            
-        } while (true);
-
-        
-    }
-
-    private static async Task GetLink(GetBuild.Root builds, string uuid)
-    {
-        foreach (var build in builds.response.Files)
-        {
-            if (build.Value.uuid == uuid)
-            {
-                _latestBuild.Url = build.Value.url;
-                _latestBuild.Hash = build.Value.sha1;
+                await streamwriter.WriteLineAsync(file.Value.url);
+                await streamwriter.WriteLineAsync($"  out={file.Key}");
+                await streamwriter.WriteLineAsync();
             }
         }
     }
-
-    private static async Task<bool> CheckChoice(string filename, string fileId)
-    {
-        Console.Write("\nChosen right File? ( press 'y'), " +
-                      "else press Enter:");
-        string answer = Console.ReadLine();
-        if (answer == "Y" || answer == "y")
-        {
-            _latestBuild.Filename = filename;
-            _latestBuild.FileUuid = fileId;
-            return true;
-        }
-
-        return false;
-    }
-    
-    
 }
