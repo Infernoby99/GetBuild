@@ -344,9 +344,6 @@ class Program
 
         foreach (var data in builds.response.builds)
         {
-            string build = data.Value.build;
-
-
             if (data.Value.build.StartsWith("26100.") && data.Value.arch.Contains(chosenArch))
             {
                 if (int.TryParse(data.Value.build.Split('.')[1], out int patch))
@@ -378,7 +375,8 @@ class Program
     {
         if (uuid != null)
         {
-            await using var filestream = new FileStream("aria2c.txt", FileMode.Create);
+            string path = @"C:\aria2c.txt";
+            await using var filestream = new FileStream(path, FileMode.Create);
             await using var streamwriter = new StreamWriter(filestream);
             GetBuild.Root? builds = await _uupServices.GetBuildDataAsync(uuid);
             foreach (var file in builds.response.Files)
