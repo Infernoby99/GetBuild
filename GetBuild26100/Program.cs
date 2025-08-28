@@ -375,13 +375,13 @@ class Program
     {
         if (uuid == null) return;
 
-        string path = @"C:\aria2c.txt";
+        string path = "C:\\aria2c.txt";
 
         try
         {
             await using var filestream = new FileStream(path, FileMode.Create);
             await using var streamwriter = new StreamWriter(filestream);
-
+            Console.WriteLine("Datei wird erstellt!");
             GetBuild.Root? builds = await _uupServices.GetBuildDataAsync(uuid);
             foreach (var file in builds.response.Files)
             {
@@ -390,7 +390,7 @@ class Program
                 await streamwriter.WriteLineAsync();
             }
 
-            Console.WriteLine($"✅ Datei wurde erfolgreich erstellt: {path}");
+            Console.WriteLine($"Datei wurde erfolgreich erstellt: {path}");
         }
         catch (UnauthorizedAccessException)
         {
