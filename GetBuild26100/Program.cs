@@ -294,7 +294,7 @@ class Program
                         Scope = true;
                         break;
                     case 3:
-                        return string.Empty;
+                        return null;
                 }
             }
 
