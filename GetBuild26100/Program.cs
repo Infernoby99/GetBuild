@@ -373,11 +373,15 @@ class Program
 
     private static async Task CreateDownloadList(string uuid)
     {
-        if (uuid != null)
+        if (uuid == null) return;
+
+        string path = @"C:\aria2c.txt";
+
+        try
         {
-            string path = @"C:\aria2c.txt";
             await using var filestream = new FileStream(path, FileMode.Create);
             await using var streamwriter = new StreamWriter(filestream);
+
             GetBuild.Root? builds = await _uupServices.GetBuildDataAsync(uuid);
             foreach (var file in builds.response.Files)
             {
@@ -385,6 +389,20 @@ class Program
                 await streamwriter.WriteLineAsync($"  out={file.Key}");
                 await streamwriter.WriteLineAsync();
             }
+
+            Console.WriteLine($"✅ Datei wurde erfolgreich erstellt: {path}");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Console.WriteLine("Zugriff verweigert! Starte das Programm evtl. als Administrator.");
+        }
+        catch (DirectoryNotFoundException)
+        {
+            Console.WriteLine("Der angegebene Ordnerpfad existiert nicht!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ein Fehler ist aufgetreten: {ex.Message}");
         }
     }
 }
