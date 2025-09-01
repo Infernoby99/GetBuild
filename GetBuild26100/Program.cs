@@ -353,8 +353,6 @@ class Program
                         maxPatch = patch;
                         bestUuid = data.Value.uuid;
 
-                        Console.WriteLine($"Latest Update Version\t\t| {data.Value.title}");
-
                         _latestBuild.WinVers = data.Value.title;
                         _latestBuild.BuildNum = data.Value.build;
                         _latestBuild.Arch = chosenArch;
@@ -365,9 +363,6 @@ class Program
                 }
             }
         }
-
-        Console.WriteLine($"Neueste Patch-Version\t\t| 26100.{maxPatch}");
-        Console.WriteLine($"BuildUuid from latest version\t| {bestUuid}");
         return bestUuid;
     }
 
