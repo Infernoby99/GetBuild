@@ -42,38 +42,6 @@ class Program
         } while (true);
     }
 
-    private static async Task GetallBuilds()
-    {
-        int i = 0;
-        List<string> BuildUuid = new();
-        listid.Root? list = await _uupServices.GetListidDataAsync("26100");
-        foreach (var build in list.response.builds)
-        {
-            var created = DateTimeOffset.FromUnixTimeSeconds(build.Value.created).DateTime;
-            Console.WriteLine($"Key: {build.Key}");
-            Console.WriteLine($"[{i++}] | {build.Value.title} | {build.Value.arch} | {created}");
-            Console.WriteLine($"UUID ==> {build.Value.uuid}");
-            Console.WriteLine("______________________________________________________________________________________");
-            BuildUuid.Add(build.Value.uuid);
-        }
-
-        do
-        {
-            Console.Write("Do you want to create aria2c download file from this list, type (\"yes\" | \"no\"): ");
-            string answer = Console.ReadLine();
-
-
-            if (answer.ToLower() == "yes")
-            {
-                Console.Write("Type [index] to get all the files in Download file: ");
-                int index = Convert.ToInt32(Console.ReadLine());
-                await CreateDownloadList(BuildUuid[index]);
-            }
-            else if (answer.ToLower() == "no") return;
-            else Console.WriteLine("Undefined input try again!");
-        } while (true);
-    }
-
     private static async Task<int> MenuOptions()
     {
         string chosenOpt;
@@ -127,6 +95,7 @@ class Program
                 Console.WriteLine($"Download URL:\t\t\n{file.Value.url}\n");
             }
         }
+
         Console.WriteLine("===============================================");
         do
         {
@@ -139,8 +108,41 @@ class Program
                 await CreateDownloadList(_latestBuild.BuildUuid);
                 return;
             }
+
             if (answer.ToLower() == "no") return;
             Console.WriteLine("Undefined input try again!");
+        } while (true);
+    }
+
+    private static async Task GetallBuilds()
+    {
+        int i = 0;
+        List<string> BuildUuid = new();
+        listid.Root? list = await _uupServices.GetListidDataAsync("26100");
+        foreach (var build in list.response.builds)
+        {
+            var created = DateTimeOffset.FromUnixTimeSeconds(build.Value.created).DateTime;
+            Console.WriteLine($"Key: {build.Key}");
+            Console.WriteLine($"[{i++}] | {build.Value.title} | {build.Value.arch} | {created}");
+            Console.WriteLine($"UUID ==> {build.Value.uuid}");
+            Console.WriteLine("______________________________________________________________________________________");
+            BuildUuid.Add(build.Value.uuid);
+        }
+
+        do
+        {
+            Console.Write("Do you want to create aria2c download file from this list, type (\"yes\" | \"no\"): ");
+            string answer = Console.ReadLine();
+
+
+            if (answer.ToLower() == "yes")
+            {
+                Console.Write("Type [index] to get all the files in Download file: ");
+                int index = Convert.ToInt32(Console.ReadLine());
+                await CreateDownloadList(BuildUuid[index]);
+            }
+            else if (answer.ToLower() == "no") return;
+            else Console.WriteLine("Undefined input try again!");
         } while (true);
     }
 
@@ -219,6 +221,7 @@ class Program
         {
             filtered = filtered.Where(b => b.title.Contains(nameFilter, StringComparison.OrdinalIgnoreCase));
         }
+
         var filteredList = filtered.ToList();
 
         int i = 0;
@@ -232,7 +235,7 @@ class Program
             Console.WriteLine("Keine Ergebnisse für deine Filter gefunden!");
             return;
         }
-        
+
         do
         {
             Console.Write("Do you want to create aria2c download file from this filtered list? (yes/no): ");
@@ -248,8 +251,8 @@ class Program
                     Console.WriteLine("Download list created: aria2c.txt");
                     return;
                 }
+
                 Console.WriteLine("Invalid index, try again!");
-                
             }
             else if (answer == "no")
             {
@@ -260,8 +263,6 @@ class Program
                 Console.WriteLine("Undefined input, try again!");
             }
         } while (true);
-
-        
     }
 
     private static async Task<string?> FitlerOptionBuild()
@@ -363,6 +364,7 @@ class Program
                 }
             }
         }
+
         return bestUuid;
     }
 
